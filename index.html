@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>bobs</title>
+    <style>
+        *{
+            box-sizing: border-box;
+        }
+        body {
+            background-color: #000;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script> // bobs are basically boids but there are three types and they can eat each other like rock paper scissors
+        const perception_radius = 50;
+        const modifiers = {
+            alignment: 0.1, // steer towards the average heading of local bob_bois
+            cohesion: 0.1, // steer to move toward the average position of local bob_bois
+            hunt: 0.2, // steer towards prey
+            run: 0.2, // steer away from predator
+            random: 0.3 // randomizing 
+        }
+        /*const modifiers = { // these settings are also interesting
+            alignment: 0,
+            cohesion: 0,
+            hunt: .7,
+            run: .5,
+            random: 0.1
+        }*/
+        // i also dont think this is working as intended
+
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight-10;
+        window.addEventListener('resize', () => {
+            console.log('resize');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight-10;
+        });
+
+        let mod = (n, m) => ((n % m) + m) % m;
+        let modded_distance = (x1, y1, x2, y2, width, height) => {
+            let dx = Math.abs(x2 - x1);
+            let dy = Math.abs(y2 - y1);
+
+            dx = Math.min(dx, width - dx)
+            dy = Math.min(dy, height - dy)
+
+            return Math.sqrt(dx**2 + dy**2);
+        }
+
+        class Bob {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = '🪨📃✂️'.includes(type) ? type : '🪨';
+                this.velocity = Math.random() * 1.5 + 0.1;
+                this.direction = 1;
+            }
+
+            draw() {
+                ctx.font = '25px Arial';
+                ctx.fillText(this.type, this.x-15, this.y+10);
+                ctx.strokeStyle = 'white';
+                ctx.beginPath();
+                //ctx.arc(this.x, this.y, 15, 0, Math.PI * 2);
+                ctx.stroke();
+    
+            }
+
+            update() {
+                this.y += this.velocity * Math.sin(this.direction);
+                this.x += this.velocity * Math.cos(this.direction);
+                this.x = mod(this.x, canvas.width);
+                this.y = mod(this.y, canvas.height);
+            }
+
+            think(all_bobs) {    
+                let local_bobs = all_bobs.filter(bob => modded_distance(this.x, this.y, bob.x, bob.y, canvas.width, canvas.height) < perception_radius);
+                local_bobs = local_bobs.filter(bob => bob !== this);
+                let local_bobs_rock = local_bobs.filter(bob => bob.type === '🪨');
+                let local_bobs_paper = local_bobs.filter(bob => bob.type === '📃');
+                let local_bobs_scissors = local_bobs.filter(bob => bob.type === '✂️');
+
+                let local_same = this.type === '🪨' ? local_bobs_rock : this.type === '📃' ? local_bobs_paper : local_bobs_scissors;
+                let local_prey = this.type === '🪨' ? local_bobs_scissors : this.type === '📃' ? local_bobs_rock : local_bobs_paper;
+                let local_predator = this.type === '🪨' ? local_bobs_paper : this.type === '📃' ? local_bobs_scissors : local_bobs_rock;
+
+                let average_direction = local_same.reduce((acc, bob) => acc + bob.direction, 0) / (local_same.length || 1)
+
+                let average_x = local_same.reduce((acc, bob) => acc + bob.x, 0) / (local_same.length || 1)
+                let average_y = local_same.reduce((acc, bob) => acc + bob.y, 0) / (local_same.length || 1)
+                let average_pos_direction = Math.atan2(average_y - this.y, average_x - this.x);
+
+                let average_predator_x = local_predator.reduce((acc, bob) => acc + bob.x, 0) / (local_predator.length || 1)
+                let average_predator_y = local_predator.reduce((acc, bob) => acc + bob.y, 0) / (local_predator.length || 1)
+                let average_predator_direction = Math.atan2(average_predator_y - this.y, average_predator_x - this.x);
+
+                let average_prey_x = local_prey.reduce((acc, bob) => acc + bob.x, 0) / (local_prey.length || 1)
+                let average_prey_y = local_prey.reduce((acc, bob) => acc + bob.y, 0) / (local_prey.length || 1)
+                let average_prey_direction = - Math.atan2(average_prey_y - this.y, average_prey_x - this.x);
+
+
+                let alignment = (average_direction - this.direction);
+                let cohesion = (average_pos_direction - this.direction);
+                let hunt = (average_predator_direction - this.direction);
+                let run = (average_prey_direction - this.direction);
+
+                let desired_direction = alignment * modifiers.alignment + cohesion * modifiers.cohesion + hunt * modifiers.hunt + run * modifiers.run + (Math.random() * modifiers.random - modifiers.random/2);
+
+                this.direction += desired_direction;
+
+                if(local_predator.some((predator)=>modded_distance(this.x, this.y, predator.x, predator.y, canvas.width, canvas.height) < 15)){
+                    if(this.type === '🪨') this.type = '📃'
+                    else if(this.type === '📃') this.type = '✂️'
+                    else if(this.type === '✂️') this.type = '🪨'
+                    this.velocity = Math.random() * 1.5 + 0.1;
+                }
+            }
+        }
+
+        const bobs = [];
+        for (let i = 0; i < 100; i++) {
+            const x = Math.random() * canvas.width;
+            const y = Math.random() * canvas.height;
+            let type = ['🪨', '📃', '✂️'][Math.floor(Math.random() * 3)];
+            bobs.push(new Bob(x, y, type));
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            bobs.forEach(bob => {
+                bob.update();
+                bob.draw();
+                bob.think(bobs);
+            });
+            bobs.some(bob => isNaN(bob.x) || isNaN(bob.y)) ? console.error('something wrong') : null;
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
